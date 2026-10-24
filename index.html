@@ -153,15 +153,17 @@ function say(msg,onDone,clipKey){
    const done=()=>{if(finished)return;finished=true;if(onDone)onDone()};
    u.onend=done;
    u.onerror=()=>{if(attempt===0){try{speechSynthesis.cancel();speechSynthesis.resume();setTimeout(()=>speakAttempt(1),180)}catch(e){done()}}else done()};
-   // Some mobile browsers do not initialize the speech engine until after the first page interaction.
-   // Queue the utterance shortly after start and refresh the voice list immediately before speaking.
+   // Chrome may reject the first utterance if speechSynthesis.speak() is not called directly during a user gesture.
+   // Refresh the voice list and resume the speech engine immediately before speaking.
    try{speechSynthesis.getVoices();speechSynthesis.resume()}catch(e){}
    speechSynthesis.speak(u);
    // Guard against engines that neither fire onend nor onerror for the first utterance.
    setTimeout(()=>{if(!finished&&attempt===0&&speechSynthesis.speaking===false&&speechSynthesis.pending===false){try{speechSynthesis.cancel();speakAttempt(1)}catch(e){done()}}},900);
   }catch(e){if(attempt===0)setTimeout(()=>speakAttempt(1),180);else if(onDone)onDone()}};
-  // Small delay lets mobile speech synthesis finish initializing after a fresh app launch.
-  setTimeout(()=>speakAttempt(0),80);
+  // Chrome blocks speech synthesis if the first speak() call is deferred with setTimeout:
+  // the call must happen synchronously inside the user's Start-button gesture.
+  // Voice-list refresh/resume are already attempted above; speak immediately and retry only on failure.
+  speakAttempt(0);
  };
  if(!playClipFirst){speakWithSelectedVoice();return}
  playStoredClip(key).then(played=>{if(played){if(onDone)onDone();return}speakWithSelectedVoice()}).catch(speakWithSelectedVoice)

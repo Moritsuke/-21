@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workout-timer-v-next-rest-between-exercises-fix1-first-open-announcement-fix';
+const CACHE_NAME = 'workout-timer-chrome-gesture-speech-fix-20261024';
 const APP_FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_FILES)));
