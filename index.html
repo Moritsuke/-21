@@ -140,7 +140,32 @@ function refreshVoices(){if(!('speechSynthesis'in window))return;availableVoices
 function loadVoiceStyle(){try{const old=localStorage.getItem('workoutVoiceStyle')||'female-soft';const valid=['female-soft','male-calm','recorded-voice'];$('voiceStyle').value=valid.includes(old)?old:({'female':'female-soft','male':'male-calm','personal':'recorded-voice','neutral':'female-soft'}[old]||'female-soft')}catch(e){$('voiceStyle').value='female-soft'}}
 function chooseVoice(){if(!('speechSynthesis'in window))return {voice:null,pitch:1,rate:1};refreshVoices();const all=availableVoices.length?availableVoices:speechSynthesis.getVoices();const japanese=all.filter(v=>/^ja(-|_)/i.test(v.lang)||/japanese|日本語/i.test(v.name));const pool=japanese.length?japanese:all;const rawStyle=((editingRoutineName&&$('voiceStyle')?.value)||routines[activeRoutine]?.voiceStyle||$('voiceStyle')?.value||'female-soft');const style=rawStyle==='coefont-guide'?(localStorage.getItem('workoutVoiceStyleStandard')||'female-soft'):rawStyle;const female=style.startsWith('female');const energetic=style.endsWith('energetic');let voice=null;let pitch=female?(energetic?1.25:1.12):(energetic?.88:.78);let rate=energetic?1.12:(style==='male-calm'?.9:1);const patterns=female?[/female|woman|nanami|kyoko|haruka|ayumi|sayaka|mizuki|女性/i,/google 日本語|microsoft.*(nanami|ayumi|haruka|kyoko)/i]:[/male|man|keita|otoya|ichiro|takumi|男性/i,/microsoft.*(keita|ichiro|takumi)/i];for(const re of patterns){voice=pool.find(v=>re.test(v.name));if(voice)break}if(!voice)voice=pool.find(v=>v.default)||pool[0]||null;return {voice,pitch,rate};}
 function configureUtterance(u){u.lang='ja-JP';u.rate=1;u.volume=1;const selected=chooseVoice();if(selected.voice)u.voice=selected.voice;u.pitch=selected.pitch;u.rate=selected.rate||1;return u;}
-function say(msg,onDone,clipKey){if(!$('voice').checked){if(onDone)onDone();return}const style=(routines[activeRoutine]?.voiceStyle)||$('voiceStyle')?.value||'female-soft';let key=clipKey||clipKeyForMessage(msg);if(style==='recorded-voice'){if(msg==='スタート'||/開始$/.test(msg))key=recordedProfileKey('start')||key;else if(/^お疲れ様でした$/.test(msg))key=recordedProfileKey('finish')||key;else if(msg==='30秒休憩します')key=recordedProfileKey('rest')||key;else if(/セット目終了$/.test(msg))key=recordedProfileKey('set:'+((String(msg).match(/^(\d+)セット目終了$/)||[])[1]||''))||recordedProfileKey('setEnd')||key;}const playClipFirst=style==='recorded-voice'&&!!key;const speakWithSelectedVoice=()=>{if(!('speechSynthesis'in window)){if(onDone)onDone();return}try{const spokenMsg=String(msg).replace(/(\d+)セット目終了/g,'$1せっとめ終了');const u=configureUtterance(new SpeechSynthesisUtterance(spokenMsg));u.onend=()=>{if(onDone)onDone()};u.onerror=()=>{if(onDone)onDone()};speechSynthesis.speak(u)}catch(e){if(onDone)onDone()}};if(!playClipFirst){speakWithSelectedVoice();return}playStoredClip(key).then(played=>{if(played){if(onDone)onDone();return}speakWithSelectedVoice()})}
+function say(msg,onDone,clipKey){
+ if(!$('voice').checked){if(onDone)onDone();return}
+ const style=(routines[activeRoutine]?.voiceStyle)||$('voiceStyle')?.value||'female-soft';let key=clipKey||clipKeyForMessage(msg);
+ if(style==='recorded-voice'){if(msg==='スタート'||/開始$/.test(msg))key=recordedProfileKey('start')||key;else if(/^お疲れ様でした$/.test(msg))key=recordedProfileKey('finish')||key;else if(msg==='30秒休憩します')key=recordedProfileKey('rest')||key;else if(/セット目終了$/.test(msg))key=recordedProfileKey('set:'+((String(msg).match(/^(\d+)セット目終了$/)||[])[1]||''))||recordedProfileKey('setEnd')||key;}
+ const playClipFirst=style==='recorded-voice'&&!!key;
+ const speakWithSelectedVoice=()=>{
+  if(!('speechSynthesis'in window)){if(onDone)onDone();return}
+  const speakAttempt=(attempt)=>{try{
+   const spokenMsg=String(msg).replace(/(\d+)セット目終了/g,'$1せっとめ終了');
+   const u=configureUtterance(new SpeechSynthesisUtterance(spokenMsg));let finished=false;
+   const done=()=>{if(finished)return;finished=true;if(onDone)onDone()};
+   u.onend=done;
+   u.onerror=()=>{if(attempt===0){try{speechSynthesis.cancel();speechSynthesis.resume();setTimeout(()=>speakAttempt(1),180)}catch(e){done()}}else done()};
+   // Some mobile browsers do not initialize the speech engine until after the first page interaction.
+   // Queue the utterance shortly after start and refresh the voice list immediately before speaking.
+   try{speechSynthesis.getVoices();speechSynthesis.resume()}catch(e){}
+   speechSynthesis.speak(u);
+   // Guard against engines that neither fire onend nor onerror for the first utterance.
+   setTimeout(()=>{if(!finished&&attempt===0&&speechSynthesis.speaking===false&&speechSynthesis.pending===false){try{speechSynthesis.cancel();speakAttempt(1)}catch(e){done()}}},900);
+  }catch(e){if(attempt===0)setTimeout(()=>speakAttempt(1),180);else if(onDone)onDone()}};
+  // Small delay lets mobile speech synthesis finish initializing after a fresh app launch.
+  setTimeout(()=>speakAttempt(0),80);
+ };
+ if(!playClipFirst){speakWithSelectedVoice();return}
+ playStoredClip(key).then(played=>{if(played){if(onDone)onDone();return}speakWithSelectedVoice()}).catch(speakWithSelectedVoice)
+}
 function clipKeyForMessage(msg){if(msg==='お疲れ様でした')return 'finish';if(msg==='30秒休憩します')return 'rest';const m=String(msg).match(/^(\d+)セット目終了$/);if(m)return 'set:'+m[1];if(/セット目終了$/.test(msg))return 'setEnd';return null}
 function sayRep(n,onDone){shownRep=n;render();if(!$('voice').checked||!$('repvoice').checked){if(onDone)onDone();return}const style=(routines[activeRoutine]?.voiceStyle)||$('voiceStyle')?.value||'female-soft';if(style==='recorded-voice'){const key=recordedProfileKey('count:'+n);if(key){playStoredClip(key).then(ok=>{if(!ok){if('speechSynthesis'in window){const u=configureUtterance(new SpeechSynthesisUtterance(String(n)));u.onend=()=>onDone&&onDone();u.onerror=()=>onDone&&onDone();speechSynthesis.speak(u)}else if(onDone)onDone()}else if(onDone)onDone()});return}}if(!('speechSynthesis'in window)){if(onDone)onDone();return}try{const spoken=n%5===0?`${n}回`:(n===11?'じゅういち':String(n));const u=configureUtterance(new SpeechSynthesisUtterance(spoken));u.onend=()=>{if(onDone)onDone()};u.onerror=()=>{if(onDone)onDone()};speechSynthesis.speak(u)}catch(e){if(onDone)onDone()}}
 const AUDIO_DB='workout-audio-clips-v1',AUDIO_STORE='clips';let audioDbPromise=null,currentAudio=null;
